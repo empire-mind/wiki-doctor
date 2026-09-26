@@ -5,6 +5,7 @@ Your agents read your markdown wiki. Nobody lints it. This checks:
 
 - broken [[wikilinks]] (code-span-aware: skips ``` fences and `inline code`)
 - orphan pages (no other page links to them)
+- duplicate basenames (two notes that resolve to the same [[link]])
 - stale `Last synced:` stamps (>30 days)
 
 Usage:
@@ -52,6 +53,7 @@ def collect_notes(root):
     notes = {}   # lowercase basename -> relpath
     files = []
     inbound = {}  # basename -> set of relpaths linking to it
+    by_bn = {}    # basename -> [relpath, ...] that share it
     for dirpath, _, fs in os.walk(root):
         for f in fs:
             if f.endswith(".md"):
@@ -61,11 +63,13 @@ def collect_notes(root):
                 bn = f[:-3].lower()
                 notes[bn] = rel
                 inbound.setdefault(bn, set())
-    return notes, files, inbound
+                by_bn.setdefault(bn, []).append(rel)
+    duplicates = {bn: sorted(rels) for bn, rels in by_bn.items() if len(rels) > 1}
+    return notes, files, inbound, duplicates
 
 
 def check(root):
-    notes, files, inbound = collect_notes(root)
+    notes, files, inbound, duplicates = collect_notes(root)
     broken, stale = [], []
     today = datetime.date.today()
     for path in files:
@@ -102,7 +106,8 @@ def check(root):
     orphans = sorted(rel for bn, rel in notes.items()
                      if not inbound[bn] and bn != "index")
     return {"files": len(files), "notes": len(notes),
-            "broken": broken, "stale": stale, "orphans": orphans}
+            "broken": broken, "stale": stale, "orphans": orphans,
+            "duplicates": duplicates}
 
 
 def main(argv=None):
@@ -123,14 +128,15 @@ def main(argv=None):
         r["orphans"] = []
     if args.no_stale:
         r["stale"] = []
-    problems = bool(r["broken"] or r["stale"] or r["orphans"])
+    problems = bool(r["broken"] or r["stale"] or r["orphans"] or r["duplicates"])
 
     if args.json:
         print(json.dumps({
             "files": r["files"], "notes": r["notes"],
             "broken": [{"file": f, "link": l, "why": w} for f, l, w in r["broken"]],
             "stale": [{"file": f, "stamp": s, "age_days": a} for f, s, a in r["stale"]],
-            "orphans": r["orphans"]}, indent=2))
+            "orphans": r["orphans"],
+            "duplicates": [{"note": k, "files": v} for k, v in r["duplicates"].items()]}, indent=2))
     else:
         print(f"files={r['files']} notes={r['notes']}")
         if r["broken"]:
@@ -145,6 +151,10 @@ def main(argv=None):
             print(f"ORPHANS={len(r['orphans'])}")
             for rel in r["orphans"][:50]:
                 print(f"  {rel}")
+        if r["duplicates"]:
+            print(f"DUPLICATE_BASENAMES={len(r['duplicates'])}")
+            for bn, rels in sorted(r["duplicates"].items())[:50]:
+                print(f"  {bn}: {'; '.join(rels)}")
         if not problems:
             print("CLEAN")
     return 1 if problems else 0
