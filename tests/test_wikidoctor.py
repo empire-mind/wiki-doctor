@@ -117,3 +117,74 @@ def test_demo_wiki_reports_all_three(tmp_path):
     assert len(r["broken"]) == 1
     assert r["orphans"] == ["old.md", "scratch.md"]
     assert len(r["stale"]) == 1
+
+def test_duplicate_basename_across_directories(tmp_path):
+    """Two notes that share a basename are reported, not silently dropped."""
+    r = check(wiki(tmp_path, {
+        "index.md": "see [[guide]]",
+        "guide.md": "the real one",
+        "drafts/guide.md": "the shadow copy",
+    }))
+    assert "guide" in r["duplicates"], r["duplicates"]
+    assert sorted(r["duplicates"]["guide"]) == ["drafts/guide.md", "guide.md"]
+    # Link resolution still works (first-match); the duplicate is a separate finding.
+    assert r["broken"] == []
+
+
+def test_unique_basenames_report_no_duplicates(tmp_path):
+    r = check(wiki(tmp_path, {
+        "index.md": "see [[a]] [[b]]",
+        "a.md": "one",
+        "b.md": "two",
+    }))
+    assert r["duplicates"] == {}
+
+
+def test_duplicate_basename_differing_only_by_case(tmp_path):
+    """Guide.md and guide.md collide when resolution is case-insensitive."""
+    import pytest
+    r = check(wiki(tmp_path, {
+        "index.md": "see [[guide]]",
+        "guide.md": "lower",
+        "Guide.md": "upper",
+    }))
+    # On a case-insensitive filesystem the two spellings collapse to one
+    # file, so only one exists and there is nothing to duplicate.
+    if "guide" not in r["duplicates"]:
+        pytest.skip("case-insensitive filesystem: Guide.md and guide.md are one file")
+    assert len(r["duplicates"]["guide"]) == 2
+
+
+def test_duplicate_basename_cli_json(tmp_path):
+    import json
+    wiki(tmp_path, {
+        "index.md": "see [[guide]]",
+        "guide.md": "one",
+        "drafts/guide.md": "two",
+    })
+    out = subprocess.run([sys.executable, str(WD), "--json", str(tmp_path)],
+                         capture_output=True, text=True).stdout
+    data = json.loads(out)
+    assert data["files"] == 3
+    dup = data["duplicates"]
+    assert len(dup) == 1
+    assert dup[0]["note"] == "guide"
+    assert sorted(dup[0]["files"]) == ["drafts/guide.md", "guide.md"]
+
+
+def test_duplicate_basename_not_clean(tmp_path):
+    """A duplicate basename is a problem, so the run is not CLEAN."""
+    clean = wiki(tmp_path / "c", {"index.md": "hi"})
+    dirty = wiki(tmp_path / "d", {
+        "index.md": "see [[guide]]",
+        "guide.md": "one",
+        "drafts/guide.md": "two",
+    })
+    ok = subprocess.run([sys.executable, str(WD), clean],
+                        capture_output=True, text=True)
+    bad = subprocess.run([sys.executable, str(WD), dirty],
+                        capture_output=True, text=True)
+    assert ok.returncode == 0 and "CLEAN" in ok.stdout
+    assert bad.returncode == 1
+    assert "DUPLICATE_BASENAMES=1" in bad.stdout
+    assert "guide" in bad.stdout

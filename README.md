@@ -56,7 +56,9 @@ a 30-file, 186-wikilink production vault at zero broken links.
 ## Honest limits
 
 - Link resolution is by note basename (case-insensitive), Obsidian-style —
-  not by full path. Ambiguous basenames resolve first-match.
+  not by full path. When two notes share a basename the link still
+  resolves first-match, but the collision is reported under
+  `DUPLICATE_BASENAMES` so the shadow copy can't stay hidden.
 - The stale-claim check is stamp-based, not semantic: it can't tell you
   two pages *contradict* each other. That detector is the research
   roadmap — see the `help wanted` issues.
@@ -66,7 +68,7 @@ a 30-file, 186-wikilink production vault at zero broken links.
 ## Development
 
 ```bash
-python3 -m pytest tests/    # 14 tests, offline, stdlib + pytest only
+python3 -m pytest tests/    # 19 tests, offline, stdlib + pytest only
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
