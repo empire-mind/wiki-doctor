@@ -4,13 +4,15 @@
 Your agents read your markdown wiki. Nobody lints it. This checks:
 
 - broken [[wikilinks]] (code-span-aware: skips ``` fences and `inline code`)
+- duplicate note basenames (case-insensitive collision)
 - orphan pages (no other page links to them)
 - stale `Last synced:` stamps (>30 days)
 
 Usage:
-    wiki-doctor.py path/to/wiki     # human report on stdout
-    wiki-doctor.py --json path/     # machine-readable
-    wiki-doctor.py --no-orphans --no-stale path/   # links only
+    wiki-doctor.py path/to/wiki                       # human report on stdout
+    wiki-doctor.py --json path/                       # machine-readable
+    wiki-doctor.py --no-orphans --no-stale path/     # links only
+    wiki-doctor.py --exclude drafts,archive path/     # exclude specific directories
 
 Exit 0 = clean, 1 = problems found. Report-only: mutates nothing.
 
@@ -48,26 +50,58 @@ def strip_code_spans(text):
     return "".join(out)
 
 
-def collect_notes(root):
-    notes = {}   # lowercase basename -> relpath
+def collect_notes(root, exclude=None):
+    notes = {}       # lowercase basename -> relpath
     files = []
-    inbound = {}  # basename -> set of relpaths linking to it
-    for dirpath, _, fs in os.walk(root):
+    inbound = {}     # basename -> set of relpaths linking to it
+    duplicates = []  # list of (rel, existing_rel, bn)
+
+    exclude_set = set()
+    if exclude:
+        if isinstance(exclude, str):
+            exclude_set = {x.strip() for x in exclude.split(",") if x.strip()}
+        elif isinstance(exclude, (set, list, tuple)):
+            exclude_set = {str(x).strip() for x in exclude if str(x).strip()}
+
+    for dirpath, dirs, fs in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root)
+        if rel_dir != ".":
+            dir_parts = set(rel_dir.split(os.sep))
+            if dir_parts & exclude_set:
+                dirs[:] = []
+                continue
+
+        # Prune excluded subdirectories in place
+        dirs[:] = [d for d in dirs if d not in exclude_set]
+
         for f in fs:
             if f.endswith(".md"):
                 p = os.path.join(dirpath, f)
                 rel = os.path.relpath(p, root)
+                parts = set(rel.split(os.sep)[:-1])
+                if parts & exclude_set:
+                    continue
+
                 files.append(p)
                 bn = f[:-3].lower()
-                notes[bn] = rel
-                inbound.setdefault(bn, set())
-    return notes, files, inbound
+                if bn in notes:
+                    duplicates.append((rel, notes[bn], bn))
+                else:
+                    notes[bn] = rel
+                    inbound.setdefault(bn, set())
+
+    return notes, files, inbound, duplicates
 
 
-def check(root):
-    notes, files, inbound = collect_notes(root)
+def check(root, exclude=None):
+    notes, files, inbound, duplicates = collect_notes(root, exclude=exclude)
     broken, stale = [], []
     today = datetime.date.today()
+
+    # Record duplicate basename findings
+    for rel, _, bn in duplicates:
+        broken.append((rel, f"[[{bn}]]", "duplicate-basename"))
+
     for path in files:
         with open(path, encoding="utf-8") as fh:
             text = strip_code_spans(fh.read())
@@ -112,13 +146,14 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-orphans", action="store_true")
     ap.add_argument("--no-stale", action="store_true")
+    ap.add_argument("--exclude", help="comma-separated directory names to exclude")
     args = ap.parse_args(argv)
 
     root = os.path.abspath(os.path.expanduser(args.path))
     if not os.path.isdir(root):
         print(f"wiki-doctor: not a directory: {args.path}", file=sys.stderr)
         return 2
-    r = check(root)
+    r = check(root, exclude=args.exclude)
     if args.no_orphans:
         r["orphans"] = []
     if args.no_stale:
@@ -128,7 +163,7 @@ def main(argv=None):
     if args.json:
         print(json.dumps({
             "files": r["files"], "notes": r["notes"],
-            "broken": [{"file": f, "link": l, "why": w} for f, l, w in r["broken"]],
+            "broken": [{"file": f, "link": lnk, "why": w} for f, lnk, w in r["broken"]],
             "stale": [{"file": f, "stamp": s, "age_days": a} for f, s, a in r["stale"]],
             "orphans": r["orphans"]}, indent=2))
     else:

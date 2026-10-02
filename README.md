@@ -1,5 +1,7 @@
 # wiki-doctor — the linter for agent knowledge bases
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Your agents read your markdown wiki. Nobody lints it. `wiki-doctor check`
 finds broken `[[wikilinks]]`, orphan pages, and stale claims — and ships
 the forkable template for **the wiki your agents actually read**.
@@ -30,10 +32,19 @@ your wiki.
 - **Broken wikilinks** — `[[page]]`, `[[page#section]]`, `[[page|display]]`,
   and relative-path links. Code-span-aware: text inside ``` fences and
   `inline code` is ignored, so your code samples don't break the build.
+- **Duplicate note basenames** — flags colliding filenames (e.g. `guide.md`
+  and `sub/guide.md`) as `duplicate-basename` so links never ambiguously resolve.
 - **Orphans** — pages no other page links to (`index.md` exempt — it's
   the front door). Orphans rot silently; now they don't.
 - **Stale stamps** — a `> Last synced: YYYY-MM-DD` stamp older than 30
   days is flagged, so agents stop trusting outdated claims.
+
+## Options
+
+- `--exclude <dirs>` — comma-separated directory names to skip (e.g. `--exclude drafts,archive`).
+- `--no-orphans` — ignore orphan checks.
+- `--no-stale` — ignore stale timestamp checks.
+- `--json` — machine-readable JSON output for CI pipelines.
 
 ## The template
 
@@ -56,7 +67,7 @@ a 30-file, 186-wikilink production vault at zero broken links.
 ## Honest limits
 
 - Link resolution is by note basename (case-insensitive), Obsidian-style —
-  not by full path. Ambiguous basenames resolve first-match.
+  not by full path. Duplicate note basenames are detected and flagged under `BROKEN` with `duplicate-basename`.
 - The stale-claim check is stamp-based, not semantic: it can't tell you
   two pages *contradict* each other. That detector is the research
   roadmap — see the `help wanted` issues.

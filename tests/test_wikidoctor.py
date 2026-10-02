@@ -117,3 +117,39 @@ def test_demo_wiki_reports_all_three(tmp_path):
     assert len(r["broken"]) == 1
     assert r["orphans"] == ["old.md", "scratch.md"]
     assert len(r["stale"]) == 1
+
+
+def test_exclude_flag(tmp_path):
+    w = wiki(tmp_path, {
+        "index.md": "see [[guide]]",
+        "guide.md": "hi",
+        "drafts/wip.md": "see [[broken-ghost]]",
+        "archive/old.md": "see [[missing-ref]]"
+    })
+    r_full = check(w)
+    assert len(r_full["broken"]) == 2
+
+    r_ex = check(w, exclude="drafts,archive")
+    assert len(r_ex["broken"]) == 0
+    assert r_ex["files"] == 2
+
+    res = subprocess.run([sys.executable, str(WD), "--exclude", "drafts,archive", "--json", w],
+                         capture_output=True, text=True)
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert data["broken"] == []
+    assert data["files"] == 2
+
+
+def test_duplicate_basename_detected(tmp_path):
+    w = wiki(tmp_path, {
+        "index.md": "home",
+        "guide.md": "first guide",
+        "subfolder/guide.md": "duplicate guide"
+    })
+    r = check(w)
+    dups = [b for b in r["broken"] if b[2] == "duplicate-basename"]
+    assert len(dups) == 1
+    assert dups[0][1] == "[[guide]]"
+    assert dups[0][2] == "duplicate-basename"
+
