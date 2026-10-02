@@ -9,4 +9,4 @@ Start here: [[MOC]] · [[log]]
 - `index.md` — this file. The front door.
 - `MOC.md` — map of content. Every topic page is one link away from here.
 - `log.md` — append-only. New entries go on top, nothing is ever rewritten.
-- `topics/` — one page per topic. Link liberally with [[wikilinks]].
+- `topics/` — one page per topic. Link liberally with `[[wikilinks]]`.

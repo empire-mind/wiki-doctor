@@ -114,6 +114,11 @@ def check(root, exclude=None):
                 if os.path.isdir(base):
                     continue
                 if os.path.isfile(base + ".md"):
+                    # Path link resolves to a real note: record the inbound
+                    # edge (previously skipped, orphaning path-linked notes).
+                    bn = os.path.basename(target).lower()
+                    if bn in notes and bn != self_bn:
+                        inbound[bn].add(rel)
                     continue
                 bn = os.path.basename(target).lower()
                 if bn in notes:
